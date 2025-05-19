@@ -15,7 +15,7 @@
 TACHE	tachedefond(void *);
 TACHE	tacheGen(void *);
 
-TACHE	tachedefond(void *)
+TACHE	tachedefond(void *arg)
 {
 	SET_CURSOR_POSITION(3,1);
 	puts("------> EXEC tache de fond");
