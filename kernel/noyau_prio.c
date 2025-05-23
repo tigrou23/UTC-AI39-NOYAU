@@ -153,6 +153,10 @@ uint8_t _timer_event = 0;          /* variable de détection d'appel SYSTICK */
     p->delay = 0;
     /* Q2.20 : mise a jour de l'etat de la tache a CREE */
     p->status = CREE; 
+
+    p->priorite_base = prio;
+    p->priorite = prio;
+
     /* Q2.21 : fin section critique */
     _unlock_(); 
 

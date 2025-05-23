@@ -37,17 +37,25 @@ void m_acquire(uint8_t m) {
     }
 
     MUTEX *mu = &mutexes[m];
+    uint8_t tid = noyau_get_tc();
 
     if (mu->ref_count == 0) {
         mu->ref_count = 1;
-        mu->owner = noyau_get_tc();
-    } else if (mu->owner == noyau_get_tc()) {
+        mu->owner = tid;
+    } else if (mu->owner == tid) {
         mu->ref_count++;
     } else {
-        // Ajouter la tâche à la file d'attente
-        mu->attente[mu->fin++] = noyau_get_tc();
-        dort();  // met la tâche en attente
-        schedule(); // appel à l'ordonnanceur
+        // Héritage de priorité
+        NOYAU_TCB* tcb_tid = noyau_get_p_tcb(tid);
+        NOYAU_TCB* tcb_owner = noyau_get_p_tcb(mu->owner);
+
+        if (tcb_tid->priorite < tcb_owner->priorite) {
+            tcb_owner->priorite = tcb_tid->priorite;
+        }
+
+        mu->attente[mu->fin++] = tid;
+        dort();
+        schedule();
     }
 }
 
@@ -57,19 +65,23 @@ void m_release(uint8_t m) {
     }
 
     MUTEX *mu = &mutexes[m];
+    uint8_t tid = noyau_get_tc();
 
     mu->ref_count--;
 
     if (mu->ref_count == 0) {
         if (mu->debut < mu->fin) {
-            // Réveiller la tâche en attente
-            uint8_t tid = mu->attente[mu->debut++];
-            mu->owner = tid;
+            uint8_t next_tid = mu->attente[mu->debut++];
+            mu->owner = next_tid;
             mu->ref_count = 1;
-            reveille(tid);
+            reveille(next_tid);
         } else {
             mu->owner = MUTEX_INVALID;
         }
+
+        // Restaurer la priorité de base
+        NOYAU_TCB* tcb = noyau_get_p_tcb(tid);
+        tcb->priorite = tcb->priorite_base;
     }
 }
 

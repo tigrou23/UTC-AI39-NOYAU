@@ -98,6 +98,9 @@ typedef struct {
   TACHE_ADR task_adr;    	/* Pointeur de la fonction de tâche*/
   uint32_t  delay;			/* valeur courante decomptage pour reveil */
   void   	*arg; 			/* pointeur sur des paramètres supplémentaires pour la tâches */
+
+  uint8_t priorite;
+  uint8_t priorite_base;
 } NOYAU_TCB;
 
 
