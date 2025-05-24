@@ -2,7 +2,7 @@
 
 ## 🧠 Contexte et objectifs pédagogiques
 
-Ce mini-projet, réalisé dans le cadre du module AI39/MI11 de l’[Université de Technologie de Compiègne (UTC)](https://www.utc.fr)., a pour but de mettre en œuvre des mécanismes fondamentaux des systèmes temps réel embarqués :
+Ce mini-projet, réalisé dans le cadre du module AI39/MI11 de l’[Université de Technologie de Compiègne (UTC)](https://www.utc.fr), a pour but de mettre en œuvre des mécanismes fondamentaux des systèmes temps réel embarqués :
 
 * L’**ordonnancement à priorité dynamique**,
 * La **synchronisation par mutex**,
