@@ -11,6 +11,180 @@ Ce mini-projet, réalisé dans le cadre du module AI39/MI11 de l’[Université 
 
 ---
 
+## 1. 🧠 Contexte et Objectifs Pédagogiques
+
+Ce mini-projet s'inscrit dans le cadre du module MI11 (Systèmes Temps Réel) de l'UTC. L'objectif était de concevoir et d'implémenter un noyau temps réel préemptif embarqué, simulé sur une plateforme ARM, et capable de gérer des tâches concurrentes via :
+
+* Un ordonnanceur **à priorité dynamique**,
+* Un système de **synchronisation par mutexs**,
+* Un **mécanisme d'héritage de priorité** pour traiter l'inversion de priorité,
+* Un test exhaustif simulant un cas classique d'inversion de priorité.
+
+Ce projet vise à comprendre en profondeur le comportement d'un noyau embarqué dans un environnement contraint et sans OS.
+
+---
+
+## 2. 🌀 Architecture Globale
+
+### 2.1 Schéma simplifié du noyau
+
+```
++------------------+     +----------------------+     +--------------------+
+|  noyau_prio.c    | <-> | noyau_file_prio.c    | <-> | mutex.c            |
+| (ordonnanceur)   |     | (gestion des files)  |     | (mutex + héritage) |
++------------------+     +----------------------+     +--------------------+
+```
+
+### 2.2 TCB (Task Control Block)
+
+```c
+typedef struct {
+    uint32_t sp_ini, sp_start, sp;  // Pointeurs de pile
+    uint16_t status;                // NCREE / CREE / PRET / EXEC / SUSP
+    uint16_t delay;                 // Timer pour temporisation
+    uint8_t priorite;               // Priorité dynamique
+    uint8_t priorite_base;          // Priorité de base
+    void* arg;
+    TACHE_ADR task_adr;             // Pointeur vers la fonction tâche
+} NOYAU_TCB;
+```
+
+---
+
+## 3. ⚙️ Ordonnancement et Priorité Dynamique
+
+### 3.1 Ordonnanceur
+
+Les tâches sont organisées dans des **files par priorité**. L'ordonnanceur sélectionne toujours la tâche de priorité la plus élevée (valeur de `priorite` la plus faible).
+
+### 3.2 Dynamisme des priorités
+
+Lors d'un héritage, une tâche peut temporairement se voir affecter une priorité plus haute. Cela modifie son insertion dans les files, réordonne le planificateur et change les identifiants de tâche si besoin (voir section suivante).
+
+---
+
+## 4. 🔒 Mutex et Synchronisation
+
+### 4.1 Structure d'un mutex
+
+```c
+typedef struct {
+    int8_t ref_count;             // -1 = libre, ≥0 = nb d'acquisitions
+    uint8_t owner;                // id de la tâche détentrice
+    uint8_t attente[MAX_TACHES];  // FIFO d'attente des tâches bloquées
+    uint8_t debut, fin;
+} MUTEX;
+```
+
+### 4.2 Fonctionnement
+
+* Lorsqu'une tâche acquiert un mutex, elle en devient propriétaire.
+* Si une autre tâche demande ce mutex :
+
+   * Elle hérite temporairement de l'identité de la propriétaire,
+   * La priorité est propagée via `tcb->priorite`,
+   * Un échange d'identifiant est réalisé dans les files (`file_swap_ids`).
+
+---
+
+## 5. 📊 Gestion de l'inversion de priorité
+
+### 5.1 Cas testé
+
+```text
+TacheMutex1 (priorité 6) acquiert le mutex
+TacheAutre  (priorité 4) tourne librement
+TacheMutex2 (priorité 2) demande le mutex → bloquée
+```
+
+### 5.2 Sans héritage
+
+* TacheMutex2 reste bloquée
+* TacheAutre s'exécute avant que TacheMutex1 ne libère le mutex
+* **Défaut d'inversion de priorité observé**
+
+### 5.3 Avec héritage
+
+* TacheMutex1 hérite de la priorité de TacheMutex2
+* Elle termine son travail plus rapidement
+* Le mutex est libéré plus tôt
+
+### 5.4 Chronogramme attendu (ASCII)
+
+```
+Sans héritage :
+[TM2]---------
+             [TA]--------------
+                          [TM1]----------------------
+
+Avec héritage :
+[TM2]---------
+             [TM1 (priorité 2)]-------------
+                                     [TA]------
+```
+
+---
+
+## 6. 🛋þ Analyse critique
+
+### 6.1 Hypothèses simplificatrices
+
+* Une tâche ne peut posséder qu'un seul mutex à la fois
+* L'héritage n'est **pas transitif**
+* L'échange d'identité dans les files est manuel (non global)
+
+### 6.2 Limites
+
+* Pas de détection d'abandon de mutex
+* Pas de file d'attente prioritaire (FIFO uniquement)
+* Pas de vérification du débordement de `attente[]`
+
+### 6.3 Pistes d'amélioration
+
+* Gestion transitive des héritages de priorité
+* Ajout d'une file de priorité au lieu d'une FIFO
+* Outils de tracing + analyse temps d'exécution
+
+---
+
+## 7. 📑 Structure du dépôt
+
+```
+/mini-projet-mi11
+├── README.md
+├── main.c                  # Lancement des tâches
+├── kernel/
+│   ├── noyau_prio.c
+│   ├── noyau_file_prio.c
+│   ├── mutex.c
+├── include/
+│   ├── noyau_prio.h
+│   ├── noyau_file_prio.h
+│   ├── mutex.h
+├── io/serialio.c          # Affichage UART
+├── doc/Notice Mac.md      # Guide de compilation macOS
+└── Makefile
+```
+
+---
+
+## 8. 🔧 Compilation et Debug
+
+### 8.1 Compilation (Mac/Linux)
+
+```bash
+make clean
+make
+```
+
+### 8.2 Lancement via QEMU
+
+```bash
+qemu-system-arm -M mps2-an500 -cpu cortex-m7 -nographic -serial mon:stdio -kernel kernel.elf
+```
+
+---
+
 ## 🔧 Implémentation technique
 
 ### ⚙️ Ordonnanceur dynamique
