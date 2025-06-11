@@ -268,7 +268,7 @@ TacheMutex1 hérite de la priorité de TacheMutex2 → finit plus vite → débl
 
 Le dépôt contient également :
 
-* **`Notice Mac.md`** : guide détaillé pour la configuration de l’environnement de développement sous macOS,
+* [Notice Mac.md](./Notice%20Mac.md) : guide détaillé pour la configuration de l’environnement de développement sous macOS,
 * Commandes pour lancer QEMU, se connecter au port série, et effectuer le débogage.
 
 ---
