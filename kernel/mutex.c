@@ -1,10 +1,11 @@
 #include "mutex.h"
 #include "noyau_prio.h"
+#include "noyau_file_prio.h"
 
 typedef struct {
-    int8_t ref_count;       // -1 = libre, >=0 = nb d'acquisitions
-    uint8_t owner;          // id tâche qui détient le mutex
-    uint8_t attente[MAX_TACHES];  // file FIFO d'attente
+    int8_t ref_count;
+    uint8_t owner;
+    uint8_t attente[MAX_TACHES];
     uint8_t debut;
     uint8_t fin;
 } MUTEX;
@@ -15,8 +16,7 @@ void m_init(void) {
     for (int i = 0; i < MAX_MUTEX; i++) {
         mutexes[i].ref_count = -1;
         mutexes[i].owner = MUTEX_INVALID;
-        mutexes[i].debut = 0;
-        mutexes[i].fin = 0;
+        mutexes[i].debut = mutexes[i].fin = 0;
     }
 }
 
@@ -33,7 +33,7 @@ uint8_t m_create(void) {
 
 void m_acquire(uint8_t m) {
     if (m >= MAX_MUTEX || mutexes[m].ref_count == -1) {
-        noyau_exit();  // mutex invalide
+        noyau_exit();
     }
 
     MUTEX *mu = &mutexes[m];
@@ -45,23 +45,28 @@ void m_acquire(uint8_t m) {
     } else if (mu->owner == tid) {
         mu->ref_count++;
     } else {
-        // Héritage de priorité
         NOYAU_TCB* tcb_tid = noyau_get_p_tcb(tid);
         NOYAU_TCB* tcb_owner = noyau_get_p_tcb(mu->owner);
 
         if (tcb_tid->priorite < tcb_owner->priorite) {
-            tcb_owner->priorite = tcb_tid->priorite;
-        }
+            // Échange d'identité dans les files
+            file_swap_ids(tid, mu->owner);
 
-        mu->attente[mu->fin++] = tid;
-        dort();
-        schedule();
+            // Suspendre la tâche propriétaire qui a pris la nouvelle identité
+            noyau_get_p_tcb(tid)->status = SUSP;
+            file_retire(tid);
+            schedule();
+        } else {
+            // FIFO
+            mu->attente[mu->fin++] = tid;
+            dort();
+        }
     }
 }
 
 void m_release(uint8_t m) {
     if (m >= MAX_MUTEX || mutexes[m].ref_count <= 0 || mutexes[m].owner != noyau_get_tc()) {
-        noyau_exit();  // erreur : tentative de libération invalide
+        noyau_exit();
     }
 
     MUTEX *mu = &mutexes[m];
@@ -79,7 +84,7 @@ void m_release(uint8_t m) {
             mu->owner = MUTEX_INVALID;
         }
 
-        // Restaurer la priorité de base
+        // Restauration de la priorité
         NOYAU_TCB* tcb = noyau_get_p_tcb(tid);
         tcb->priorite = tcb->priorite_base;
     }
@@ -87,7 +92,7 @@ void m_release(uint8_t m) {
 
 void m_destroy(uint8_t m) {
     if (m >= MAX_MUTEX || mutexes[m].ref_count != 0) {
-        noyau_exit();  // mutex invalide ou encore détenu
+        noyau_exit();
     }
     mutexes[m].ref_count = -1;
     mutexes[m].owner = MUTEX_INVALID;

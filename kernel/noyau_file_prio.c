@@ -155,3 +155,22 @@ void file_affiche() {
 		printf("\n");
     }
 }
+
+void file_swap_ids(uint16_t id1, uint16_t id2) {
+    uint16_t p1 = id1 >> 3;
+    uint16_t p2 = id2 >> 3;
+    uint16_t t1 = id1 & 7;
+    uint16_t t2 = id2 & 7;
+
+    uint16_t tmp;
+
+    // Échange dans _file
+    tmp = _file[p1][t1];
+    _file[p1][t1] = _file[p2][t2];
+    _file[p2][t2] = tmp;
+
+    // Échange dans les identifiants : on modifie leur position logique
+    tmp = _queue[p1];
+    _queue[p1] = _queue[p2];
+    _queue[p2] = tmp;
+}
