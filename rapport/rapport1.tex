@@ -172,37 +172,95 @@ Par ailleurs, si d’autres tâches de priorité inférieure tentent de prendre 
 Le code suivant montre l’extrait de m\_acquire() gérant le cas d’héritage de priorité comparé au cas FIFO normal :
 
 \begin{minted}[linenos, frame=lines]{c}
-// Extrait de m_acquire avec gestion de l'héritage de priorité
-NOYAU_TCB* tcb_tid   = noyau_get_p_tcb(tid);
-NOYAU_TCB* tcb_owner = noyau_get_p_tcb(mu->owner);
-if (tcb_tid->priorite < tcb_owner->priorite) {
-    // Héritage de priorité : C hérite de la priorité de A
-    file_swap_ids(tid, mu->owner);
-    noyau_get_p_tcb(tid)->status = SUSP;  // suspendre A
-    file_retire(tid);
-    schedule();                           // relancer l'ordonnanceur
-} else {
-    // Pas d'héritage (tâche moins prioritaire), attente FIFO classique
-    mu->attente[ mu->fin++ ] = tid;
-    dort();        // endormir la tâche appelante
+/*------------------------------- acquire ----------------------------------*/
+void m_acquire(uint8_t m)
+{
+    if (m >= MAX_MUTEX || mutexes[m].ref_count == -1) noyau_exit();
+
+    MUTEX  *mu  = &mutexes[m];
+    uint16_t tc = noyau_get_tc();           /* tâche courante              */
+
+    /* mutex libre ---------------------------------------------------------*/
+    if (mu->ref_count == 0) {
+        mu->ref_count = 1;
+        mu->owner     = tc;
+        return;
+    }
+
+    /* récursivité ---------------------------------------------------------*/
+    if (mu->owner == tc) { ++mu->ref_count; return; }
+
+    /* -------------------------------------------------------------------- */
+    NOYAU_TCB *tcb_tc    = noyau_get_p_tcb(tc);
+    NOYAU_TCB *tcb_owner = noyau_get_p_tcb(mu->owner);
+
+    /* cas PRIORITY-INHERITANCE -------------------------------------------*/
+    if (tcb_tc->priorite < tcb_owner->priorite) {
+
+        /* 1. échange des identités dans les files -------------------- */
+        file_swap_ids(tc, mu->owner);
+
+        /* 2. on met la tâche courante dans la liste d’attente du mutex */
+        mu->attente[mu->fin++] = tc;
+
+        /* 3. on la met en SUSP et on retire la *case* qui la contient  */
+        noyau_get_p_tcb(tc)->status = SUSP;
+        file_retire(mu->owner);          /* <-- la bonne entrée          */
+
+        schedule();                      /* on laisse tourner la tâche
+                                               qui a hérité de la prio       */
+        return;
+    }
+    else {
+        /* priorité <= : simple blocage FIFO                                 */
+        mu->attente[mu->fin++] = tc;
+        dort();             /* dort() endort tc et planifie une autre tâche */
+    }
 }
 \end{minted}
 
 Enfin, lors de la libération du mutex, si la tâche courante avait hérité d’une priorité plus élevée, celle-ci doit être rétablie à son niveau normal. Le Listing 4 illustre la restauration de priorité effectuée dans m\_release() une fois le mutex complètement libéré :
 
 \begin{minted}[linenos, frame=lines]{c}
-// Restauration de la priorité dans m_release
-...
-if (mu->ref_count == 0) {
-    if (file_attente non vide) {
-        // attribution du mutex au suivant en attente
-        ...
-    } else {
-        mu->owner = MUTEX_INVALID;
+/*------------------------------- release ----------------------------------*/
+void m_release(uint8_t m)
+{
+    if (m >= MAX_MUTEX) noyau_exit();
+    MUTEX *mu = &mutexes[m];
+
+    if (mu->owner != noyau_get_tc() || mu->ref_count <= 0) noyau_exit();
+
+    /* décrément récursivité ----------------------------------------------*/
+    if (--mu->ref_count > 0) return;
+
+    /* libération effective ------------------------------------------------*/
+    uint16_t old_owner = mu->owner;
+
+    /* quelqu’un attend ? --------------------------------------------------*/
+    if (mu->debut < mu->fin) {
+        uint16_t next = mu->attente[mu->debut++];
+        mu->owner     = next;
+        mu->ref_count = 1;
+
+        /* dés-héritage : on remet l’ancienne propriétaire à sa priorité base */
+        NOYAU_TCB *tcb_old = noyau_get_p_tcb(old_owner);
+        if (tcb_old->priorite != tcb_old->priorite_base) {
+            file_retire(old_owner);                 /* la sortir de l’anneau “hérité” */
+            tcb_old->priorite = tcb_old->priorite_base;
+            file_ajoute(old_owner);                 /* la ré-insérer au bon niveau   */
+        }
+
+        reveille(next);                             /* réveil de la tâche 16          */
     }
-    // Fin de la section critique, on rétablit la priorité du propriétaire
-    NOYAU_TCB* tcb = noyau_get_p_tcb(current_task);
-    tcb->priorite = tcb->priorite_base;
+    else {
+        /* file d’attente vide                                              */
+        mu->owner = M_INVALID;
+
+        NOYAU_TCB *tcb_old = noyau_get_p_tcb(old_owner);
+        tcb_old->priorite  = tcb_old->priorite_base;
+
+        mu->debut = mu->fin = 0;          /* remise à zéro propre           */
+    }
 }
 \end{minted}
 
