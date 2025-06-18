@@ -10,6 +10,12 @@
 // recuperation du bon fichier selon l'architecture pour la fonction printf
 #include "../io/serialio.h"
 
+static uint16_t _file[MAX_PRIO][MAX_TACHES_FILE];     /* anneaux (next)    */
+static uint16_t _queue[MAX_PRIO];                     /* last-in par prio  */
+
+/*  Identité explicite associée à chaque case de l’anneau          */
+static uint16_t _id_explicit[MAX_PRIO][MAX_TACHES_FILE];
+
 
 /*----------------------------------------------------------------------------*
  * variables communes a toutes les procedures                                 *
@@ -29,96 +35,64 @@ static uint16_t _file[MAX_PRIO][MAX_TACHES_FILE];
  */
 static uint16_t _queue[MAX_TACHES_FILE];
 
-/*
- * initialise la file
- * entre  : sans
- * sortie : sans
- * description : la queue est initialisee à une valeur de tache impossible
- */
-void file_init(void) {
-	uint16_t i;
-
-	for (i=0; i<MAX_TACHES_FILE; i++) {
-		_queue[i] = F_VIDE;
-	}
-}
-
-/*
- * ajoute une tache dans la file
- * entre  : n numero de la tache a ajouter
- * sortie : sans
- * description : ajoute la tache n en fin de file
- */
-void file_ajoute(uint16_t n) {
-	uint16_t num_file, num_t, *q, *f;
-
-	num_file = (n >> 3);
-	num_t = n & 7;
-	q = &_queue[num_file];
-	f = &_file[num_file][0];
-    if (*q == F_VIDE) {
-        f[num_t] = num_t;
-    } else {
-        f[num_t] = f[*q];
-        f[*q] = num_t;
-    }
-
-    *q = num_t;
-}
-
-/*
- * retire une tache de la file
- * entre  : t numero de la tache a retirer
- * sortie : sans
- * description : retire la tache t de la file. L'ordre de la file n'est pas
-                 modifie
- */
-void file_retire(uint16_t t) {
-	uint16_t num_file, num_t, *q, *f;
-
-	num_file = t >> 3;
-	num_t    = t & 7;
-	q = &_queue[num_file];
-	f = &_file[num_file][0];
-
-    if (*q == (f[*q])) {
-        *q = F_VIDE;
-    } else {
-        if (num_t == *q) {
-            *q = f[*q];
-            while (f[*q] != num_t) {
-                *q = f[*q];
-            }
-            f[*q] = f[num_t];
-        } else {
-            while (f[*q] != num_t) {
-                *q = f[*q];
-            }
-            f[*q] = f[f[*q]];
+void file_init(void)
+{
+    for (uint16_t p = 0; p < MAX_PRIO; ++p) {
+        _queue[p] = F_VIDE;
+        for (uint16_t i = 0; i < MAX_TACHES_FILE; ++i) {
+            _file[p][i]        = i;        /* anneau auto-bouclé             */
+            _id_explicit[p][i] = MAX_TACHES_NOYAU;  /* invalide                */
         }
     }
 }
 
-/*
- * recherche la tache suivante a executer
- * entre  : sans
- * sortie : numero de la tache a activer
- * description : queue pointe sur la tache suivante
- */
-uint16_t file_suivant(void) {
-	uint16_t prio;
-	uint16_t id;
+void file_ajoute(uint16_t id)
+{
+    uint16_t p = id >> 3;      /* priorité “rang”        */
+    uint16_t n = id & 7;       /* index dans l’anneau    */
 
-	for (prio = 0; prio < MAX_TACHES_FILE; ++prio) {
-		if (_queue[prio] != F_VIDE) {
-			id = _file[prio][_queue[prio]];
-			_queue[prio] = id;
-			return (id | prio << 3);
-		}
-	}
+    _id_explicit[p][n] = id;   /* mémorise l’identité    */
 
-    return (MAX_TACHES_NOYAU);
+    if (_queue[p] == F_VIDE) {          /* première entrée                 */
+        _file[p][n] = n;
+    } else {
+        _file[p][n]       = _file[p][_queue[p]];
+        _file[p][_queue[p]] = n;
+    }
+    _queue[p] = n;
 }
+
+void file_retire(uint16_t id)
+{
+    uint16_t p = id >> 3, n = id & 7;
+    uint16_t *q = &_queue[p], *ring = _file[p];
+
+    if (*q == F_VIDE) return;      /* rien à faire                        */
+
+    if (*q == ring[*q]) {          /* anneau mono-élément                */
+        *q = F_VIDE;
+    } else {
+        /* recherche du prédécesseur de n                                 */
+        uint16_t pred = *q;
+        while (ring[pred] != n) pred = ring[pred];
+        ring[pred] = ring[n];      /* by-pass n                           */
+        if (*q == n) *q = pred;    /* maj tail si besoin                  */
+    }
+    _id_explicit[p][n] = MAX_TACHES_NOYAU;   /* case redevenue libre       */
+}
+
+uint16_t file_suivant(void)
+{
+    for (uint16_t p = 0; p < MAX_PRIO; ++p) {
+        if (_queue[p] != F_VIDE) {
+            uint16_t head = _file[p][_queue[p]]; /* premier de l’anneau    */
+            _queue[p]     = head;                /* round-robin            */
+            return _id_explicit[p][head];        /* vraie identité         */
+        }
+    }
+    return MAX_TACHES_NOYAU;   /* plus rien d’éligible                      */
+}
+
 
 /*
  * affiche la queue, donc la derniere tache
@@ -156,21 +130,15 @@ void file_affiche() {
     }
 }
 
-void file_swap_ids(uint16_t id1, uint16_t id2) {
-    uint16_t p1 = id1 >> 3;
-    uint16_t p2 = id2 >> 3;
-    uint16_t t1 = id1 & 7;
-    uint16_t t2 = id2 & 7;
+void file_swap_ids(uint16_t id1, uint16_t id2)
+{
+    if (id1 == id2) return;
 
-    uint16_t tmp;
+    uint16_t p1 = id1 >> 3, n1 = id1 & 7;
+    uint16_t p2 = id2 >> 3, n2 = id2 & 7;
 
-    // Échange dans _file
-    tmp = _file[p1][t1];
-    _file[p1][t1] = _file[p2][t2];
-    _file[p2][t2] = tmp;
-
-    // Échange dans les identifiants : on modifie leur position logique
-    tmp = _queue[p1];
-    _queue[p1] = _queue[p2];
-    _queue[p2] = tmp;
+    /* échange pur et simple des identités explicites                        */
+    uint16_t tmp                     = _id_explicit[p1][n1];
+    _id_explicit[p1][n1]             = _id_explicit[p2][n2];
+    _id_explicit[p2][n2]             = tmp;
 }

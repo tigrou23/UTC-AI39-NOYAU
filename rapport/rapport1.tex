@@ -220,6 +220,15 @@ Sans héritage de priorité, nous avons observé que la tâche C (basse priorit�
 \end{figure}
 
 Grâce à l’héritage, C (initialement prio 6) a fonctionné à un niveau de priorité 2 pendant qu’elle détenait le mutex réclamé par A. Ainsi, la tâche B (priorité 4) n’a jamais pu prendre le processeur tant que C n’avait pas fini sa section critique (achevée plus tôt, à t=32 dans notre exemple modifié). La tâche A a pu obtenir le mutex dès t=32, au lieu de t=36 ou plus dans le scénario sans héritage. Le temps d’attente de A a donc été réduit, et l’ordonnancement effectif respecte mieux la hiérarchie des priorités.
+\\\\
+Nous avons essayé de matérialiser le problème avec notre code dans le terminal QEMU :
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=15cm]{images/chrono3}
+\end{figure}
+
+Comme le montre la Figure, la tâche de plus haute priorité (id 16, priorité 2) n’attend plus indûment la libération du mutex : dès qu’elle tente de l’acquérir, la tâche de basse priorité qui le détient (id 56, priorité 6) hérite immédiatement de la priorité 2 et poursuit son exécution sans être préemptée par la tâche intermédiaire (id 32, priorité 4). Cette élévation temporaire réduit la section critique : le mutex est libéré plus tôt, la tâche prioritaire reprend aussitôt, puis les priorités d’origine sont restaurées. On constate ainsi l’absence d’intervalle où la tâche intermédiaire monopoliserait le processeur alors que la tâche prioritaire est bloquée – preuve que l’héritage de priorité résout l’inversion de priorité observée dans le scénario sans mécanisme spécifique.
 
 \pagebreak
 
