@@ -13,7 +13,7 @@ Ce mini-projet, réalisé dans le cadre du module AI39/MI11 de l’[Université 
 
 ## 1. 🧠 Contexte et Objectifs Pédagogiques
 
-Ce mini-projet s'inscrit dans le cadre du module MI11 (Systèmes Temps Réel) de l'UTC. L'objectif était de concevoir et d'implémenter un noyau temps réel préemptif embarqué, simulé sur une plateforme ARM, et capable de gérer des tâches concurrentes via :
+Ce mini-projet s'inscrit dans le cadre du module MI11 de l'UTC. L'objectif était de concevoir et d'implémenter un noyau temps réel préemptif embarqué, simulé sur une plateforme ARM, et capable de gérer des tâches concurrentes via :
 
 * Un ordonnanceur **à priorité dynamique**,
 * Un système de **synchronisation par mutexs**,
@@ -39,13 +39,16 @@ Ce projet vise à comprendre en profondeur le comportement d'un noyau embarqué 
 
 ```c
 typedef struct {
-    uint32_t sp_ini, sp_start, sp;  // Pointeurs de pile
-    uint16_t status;                // NCREE / CREE / PRET / EXEC / SUSP
-    uint16_t delay;                 // Timer pour temporisation
-    uint8_t priorite;               // Priorité dynamique
-    uint8_t priorite_base;          // Priorité de base
-    void* arg;
-    TACHE_ADR task_adr;             // Pointeur vers la fonction tâche
+  uint16_t  status;			/* etat courant de la tache        */
+  uint32_t  sp_ini;    		/* valeur initiale de sp           */
+  uint32_t  sp_start;   	/* valeur de base de sp pour la tache */
+  uint32_t  sp;        		/* valeur courante de sp           */
+  TACHE_ADR task_adr;    	/* Pointeur de la fonction de tâche*/
+  uint32_t  delay;			/* valeur courante decomptage pour reveil */
+  void   	*arg; 			/* pointeur sur des paramètres supplémentaires pour la tâches */
+
+  uint8_t priorite;
+  uint8_t priorite_base;
 } NOYAU_TCB;
 ```
 
@@ -81,9 +84,9 @@ typedef struct {
 * Lorsqu'une tâche acquiert un mutex, elle en devient propriétaire.
 * Si une autre tâche demande ce mutex :
 
-   * Elle hérite temporairement de l'identité de la propriétaire,
-   * La priorité est propagée via `tcb->priorite`,
-   * Un échange d'identifiant est réalisé dans les files (`file_swap_ids`).
+    * Elle hérite temporairement de l'identité de la propriétaire,
+    * La priorité est propagée via `tcb->priorite`,
+    * Un échange d'identifiant est réalisé dans les files (`file_swap_ids`).
 
 ---
 
@@ -147,37 +150,16 @@ Avec héritage :
 
 ---
 
-## 7. 📑 Structure du dépôt
+## 7. 🔧 Compilation et Debug
 
-```
-/mini-projet-mi11
-├── README.md
-├── main.c                  # Lancement des tâches
-├── kernel/
-│   ├── noyau_prio.c
-│   ├── noyau_file_prio.c
-│   ├── mutex.c
-├── include/
-│   ├── noyau_prio.h
-│   ├── noyau_file_prio.h
-│   ├── mutex.h
-├── io/serialio.c          # Affichage UART
-├── doc/Notice Mac.md      # Guide de compilation macOS
-└── Makefile
-```
-
----
-
-## 8. 🔧 Compilation et Debug
-
-### 8.1 Compilation (Mac/Linux)
+### 7.1 Compilation (Mac/Linux)
 
 ```bash
 make clean
 make
 ```
 
-### 8.2 Lancement via QEMU
+### 7.2 Lancement via QEMU
 
 ```bash
 qemu-system-arm -M mps2-an500 -cpu cortex-m7 -nographic -serial mon:stdio -kernel kernel.elf
@@ -260,9 +242,9 @@ TacheMutex1 hérite de la priorité de TacheMutex2 → finit plus vite → débl
 5. Chronogrammes (avant / après)
 6. Analyse critique :
 
-   * Hypothèses simplificatrices (1 mutex/tâche, non-transitivité)
-   * Comportement attendu vs observé
-   * Limitations et pistes d’amélioration
+    * Hypothèses simplificatrices (1 mutex/tâche, non-transitivité)
+    * Comportement attendu vs observé
+    * Limitations et pistes d’amélioration
 
 ## 📘 Documentation jointe
 
